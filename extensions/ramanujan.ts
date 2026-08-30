@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isBashToolResult, isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { runShellCommand } from "../src/exec.js";
-import { formatHistory, RamanujanState } from "../src/state.js";
+import { formatHistory, formatStats, RamanujanState } from "../src/state.js";
 
 const state = new RamanujanState();
 
@@ -50,7 +50,10 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Cleared.", "info");
 				return;
 			}
-			ctx.ui.notify(formatHistory(state.getHistory()), "info");
+			ctx.ui.notify(
+				`${formatStats(state.getStats())}\n\n${formatHistory(state.getHistory())}`,
+				"info",
+			);
 		},
 	});
 }

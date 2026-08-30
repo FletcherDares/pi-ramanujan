@@ -10,6 +10,9 @@ interface Call {
 	prefixResult: Promise<BashExecResult>;
 	suffix: string | null;
 	prefixOutput?: BashExecResult;
+	startedAt: number;
+	endedAt?: number;
+	accounted?: boolean;
 }
 
 export interface HistoryEntry {
@@ -20,9 +23,17 @@ export interface HistoryEntry {
 	phase: "stream" | "done";
 }
 
+export interface SpeculationStats {
+	speculations: number;
+	speculativeMs: number;
+}
+
 export class RamanujanState {
 	private calls = new Map<string, Call>();
 	private history: HistoryEntry[] = [];
+	private stats: SpeculationStats = { speculations: 0, speculativeMs: 0 };
+
+	constructor(private readonly now = Date.now) {}
 
 	onDelta(
 		toolCallId: string,
@@ -35,15 +46,28 @@ export class RamanujanState {
 			(typeof parsedCommand === "string" ? parsedCommand : null);
 		if (!command) return;
 
-		const call = this.calls.get(toolCallId);
+		const existing = this.calls.get(toolCallId);
 		const prefix = prefixBeforeTrailingAnd(command);
-		if (!prefix || !isPreExecutable(prefix) || prefix === call?.prefix) return;
+		if (!prefix || !isPreExecutable(prefix) || prefix === existing?.prefix) return;
 
-		this.calls.set(toolCallId, {
+		if (existing) this.account(existing);
+		const startedAt = this.now();
+		const call: Call = {
 			prefix,
 			prefixResult: launch(prefix),
 			suffix: null,
-		});
+			startedAt,
+		};
+		call.prefixResult.then(
+			() => {
+				call.endedAt = this.now();
+			},
+			() => {
+				call.endedAt = this.now();
+			},
+		);
+		this.calls.set(toolCallId, call);
+		this.stats.speculations++;
 		this.history.push({
 			toolCallId,
 			command,
@@ -57,6 +81,7 @@ export class RamanujanState {
 		const call = this.calls.get(toolCallId);
 		if (!call) return null;
 
+		this.account(call);
 		call.suffix = suffixAfterPrefix(command, call.prefix);
 		call.prefixOutput = await call.prefixResult;
 		const failed =
@@ -104,6 +129,7 @@ export class RamanujanState {
 	}
 
 	clear(): void {
+		for (const call of this.calls.values()) this.account(call);
 		this.calls.clear();
 	}
 
@@ -111,8 +137,19 @@ export class RamanujanState {
 		return this.history;
 	}
 
+	getStats(): SpeculationStats {
+		return { ...this.stats };
+	}
+
 	clearHistory(): void {
 		this.history = [];
+		this.stats = { speculations: 0, speculativeMs: 0 };
+	}
+
+	private account(call: Call): void {
+		if (call.accounted) return;
+		call.accounted = true;
+		this.stats.speculativeMs += Math.max(0, (call.endedAt ?? this.now()) - call.startedAt);
 	}
 }
 
@@ -131,4 +168,8 @@ export function formatHistory(history: readonly HistoryEntry[]): string {
 			return line;
 		})
 		.join("\n\n");
+}
+
+export function formatStats(stats: SpeculationStats): string {
+	return `${stats.speculations} speculations, ${(stats.speculativeMs / 1000).toFixed(2)}s speculative execution.`;
 }

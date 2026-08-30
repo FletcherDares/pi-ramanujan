@@ -8,7 +8,7 @@ Allowlist: `git status`, `git branch` (`src/allowlist.ts`).
 pi install ./
 ```
 
-`/ramanujan` — show splits. `/ramanujan clear` — clear.
+`/ramanujan` — show speculation stats and splits. `/ramanujan clear` — clear.
 
 ```bash
 npm test
