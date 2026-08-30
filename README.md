@@ -1,32 +1,15 @@
 # pi-ramanujan
 
-Speculative `&&` splitter for the [Pi](https://pi.dev/) harness.
+Speculative `&&` for [Pi](https://pi.dev/). When bash streams `git status && git branch`, runs `git status` early, then only `git branch`, stitches output.
 
-**Detect-only for now** — watches bash commands as they stream, finds complete prefixes before `&&`, and logs them. Does not run commands early yet.
-
-## Install
+Allowlist: `git status`, `git branch` (`src/allowlist.ts`).
 
 ```bash
 pi install ./
 ```
 
-Or from git once published:
+`/ramanujan` — show splits. `/ramanujan clear` — clear.
 
 ```bash
-pi install git:github.com/FletcherDares/pi-ramanujan
-```
-
-## Usage
-
-The model uses `bash` as usual. Ramanujan hooks in automatically.
-
-- `/ramanujan` — show detected splits this session
-- `/ramanujan clear` — clear history
-
-## Dev
-
-```bash
-npm install
 npm test
-npm run typecheck
 ```

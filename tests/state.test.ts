@@ -1,37 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { RamanujanState, suffixAfterPrefix } from "../src/state";
+import { RamanujanState } from "../src/state";
 
-describe("suffixAfterPrefix", () => {
-	it("returns the part after a top-level &&", () => {
-		expect(suffixAfterPrefix("git status && git diff", "git status")).toBe(
-			"git diff",
-		);
-	});
-});
+const ok = async () => ({ output: "prefix-out", exitCode: 0, cancelled: false });
+const fail = async () => ({ output: "prefix-err", exitCode: 1, cancelled: false });
 
 describe("RamanujanState", () => {
-	it("records a prefix during streaming", () => {
+	it("launches allowlisted prefix on stream", () => {
 		const state = new RamanujanState();
-		state.onToolCallStart("call-1", "bash");
-		state.onToolCallDelta("call-1", "bash", '{"command":"git status &&"}');
-
-		const history = state.getHistory();
-		expect(history).toHaveLength(1);
-		expect(history[0]?.phase).toBe("stream");
-		expect(history[0]?.prefix).toBe("git status");
+		let launched = false;
+		state.onDelta("id-1", '{"command":"git status &&"}', async () => {
+			launched = true;
+			return ok();
+		});
+		expect(launched).toBe(true);
 	});
 
-	it("records suffix on completion", () => {
+	it("rewrites to suffix after successful prefix", async () => {
 		const state = new RamanujanState();
-		state.onToolCallStart("call-1", "bash");
-		state.onToolCallDelta("call-1", "bash", '{"command":"git status &&"}');
-		state.onToolCallComplete(
-			"call-1",
-			"bash",
-			"git status && git diff --stat",
-		);
+		state.onDelta("id-1", '{"command":"git status &&"}', ok);
+		expect(await state.prepare("id-1", "git status && git branch")).toBe("git branch");
+	});
 
-		const complete = state.getHistory().find((entry) => entry.phase === "complete");
-		expect(complete?.suffix).toBe("git diff --stat");
+	it("no-ops when prefix fails", async () => {
+		const state = new RamanujanState();
+		state.onDelta("id-1", '{"command":"git status &&"}', fail);
+		expect(await state.prepare("id-1", "git status && git branch")).toBe(":");
+	});
+
+	it("stitches output", async () => {
+		const state = new RamanujanState();
+		state.onDelta("id-1", '{"command":"git status &&"}', ok);
+		await state.prepare("id-1", "git status && git branch");
+		const result = state.stitch("id-1", [{ type: "text", text: "suffix-out" }], false);
+		expect(result?.content[0]?.text).toBe("prefix-out\nsuffix-out");
 	});
 });

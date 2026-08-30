@@ -1,107 +1,113 @@
+import type { BashExecResult } from "./exec.js";
+import { isPreExecutable } from "./allowlist.js";
 import { extractPartialCommand } from "./extract.js";
 import { prefixBeforeTrailingAnd } from "./split.js";
 
-const SHELL_TOOLS = new Set(["bash", "powershell"]);
+type Launch = (prefix: string) => Promise<BashExecResult>;
 
-export interface ShellDetection {
-	toolCallId: string;
-	toolName: string;
-	command: string;
-	prefix: string | null;
+interface Call {
+	prefix: string;
+	prefixResult: Promise<BashExecResult>;
 	suffix: string | null;
-	phase: "stream" | "complete";
-	at: number;
+	prefixOutput?: BashExecResult;
 }
 
-interface ActiveCall {
-	toolName: string;
-	lastCommand: string;
-	streamPrefix: string | null;
+export interface HistoryEntry {
+	toolCallId: string;
+	command: string;
+	prefix: string;
+	suffix: string | null;
+	phase: "stream" | "done";
 }
 
 export class RamanujanState {
-	private active = new Map<string, ActiveCall>();
-	private history: ShellDetection[] = [];
+	private calls = new Map<string, Call>();
+	private history: HistoryEntry[] = [];
 
-	onToolCallStart(toolCallId: string, toolName: string): void {
-		if (!SHELL_TOOLS.has(toolName)) {
-			return;
-		}
-		this.active.set(toolCallId, {
-			toolName,
-			lastCommand: "",
-			streamPrefix: null,
-		});
-	}
-
-	onToolCallDelta(
+	onDelta(
 		toolCallId: string,
-		toolName: string,
 		partialJson: string,
+		launch: Launch,
 		parsedCommand?: string,
 	): void {
-		if (!SHELL_TOOLS.has(toolName)) {
-			return;
-		}
-
 		const command =
 			extractPartialCommand(partialJson) ??
 			(typeof parsedCommand === "string" ? parsedCommand : null);
-		if (command === null) {
-			return;
-		}
+		if (!command) return;
 
-		let call = this.active.get(toolCallId);
-		if (!call) {
-			call = { toolName, lastCommand: "", streamPrefix: null };
-			this.active.set(toolCallId, call);
-		}
-
-		call.lastCommand = command;
+		const call = this.calls.get(toolCallId);
 		const prefix = prefixBeforeTrailingAnd(command);
-		if (prefix === null || prefix === call.streamPrefix) {
-			return;
-		}
+		if (!prefix || !isPreExecutable(prefix) || prefix === call?.prefix) return;
 
-		call.streamPrefix = prefix;
+		this.calls.set(toolCallId, {
+			prefix,
+			prefixResult: launch(prefix),
+			suffix: null,
+		});
 		this.history.push({
 			toolCallId,
-			toolName,
 			command,
 			prefix,
 			suffix: null,
 			phase: "stream",
-			at: Date.now(),
 		});
 	}
 
-	onToolCallComplete(toolCallId: string, toolName: string, command: string): void {
-		if (!SHELL_TOOLS.has(toolName)) {
-			return;
-		}
+	async prepare(toolCallId: string, command: string): Promise<string | null> {
+		const call = this.calls.get(toolCallId);
+		if (!call) return null;
 
-		const call = this.active.get(toolCallId);
-		const prefix = call?.streamPrefix ?? null;
-		const suffix = prefix ? suffixAfterPrefix(command, prefix) : null;
+		call.suffix = suffixAfterPrefix(command, call.prefix);
+		call.prefixOutput = await call.prefixResult;
+		const failed =
+			call.prefixOutput.exitCode !== 0 ||
+			call.prefixOutput.exitCode === undefined ||
+			call.prefixOutput.cancelled;
 
 		this.history.push({
 			toolCallId,
-			toolName,
 			command,
-			prefix,
-			suffix,
-			phase: "complete",
-			at: Date.now(),
+			prefix: call.prefix,
+			suffix: call.suffix,
+			phase: "done",
 		});
 
-		this.active.delete(toolCallId);
+		if (failed || !call.suffix) return ":";
+		return call.suffix;
 	}
 
-	onTurnEnd(): void {
-		this.active.clear();
+	stitch(
+		toolCallId: string,
+		suffixContent: ReadonlyArray<{ type: string; text?: string }>,
+		suffixIsError: boolean,
+	): { content: Array<{ type: "text"; text: string }>; isError: boolean } | null {
+		const call = this.calls.get(toolCallId);
+		if (!call?.prefixOutput) return null;
+
+		const failed =
+			call.prefixOutput.exitCode !== 0 ||
+			call.prefixOutput.exitCode === undefined ||
+			call.prefixOutput.cancelled;
+		const suffix = suffixContent
+			.filter((b) => b.type === "text" && b.text)
+			.map((b) => b.text as string)
+			.join("");
+		const text = failed
+			? call.prefixOutput.output
+			: [call.prefixOutput.output, suffix].filter(Boolean).join("\n");
+
+		this.calls.delete(toolCallId);
+		return {
+			content: [{ type: "text", text }],
+			isError: failed || Boolean(call.suffix && suffixIsError),
+		};
 	}
 
-	getHistory(): readonly ShellDetection[] {
+	clear(): void {
+		this.calls.clear();
+	}
+
+	getHistory(): readonly HistoryEntry[] {
 		return this.history;
 	}
 
@@ -111,37 +117,18 @@ export class RamanujanState {
 }
 
 export function suffixAfterPrefix(command: string, prefix: string): string | null {
-	const commandTrimmed = command.trim();
-	const prefixTrimmed = prefix.trim();
-	if (!commandTrimmed.startsWith(prefixTrimmed)) {
-		return null;
-	}
-
-	let rest = commandTrimmed.slice(prefixTrimmed.length).trimStart();
-	if (rest.startsWith("&&")) {
-		rest = rest.slice(2).trimStart();
-	}
-	return rest.length > 0 ? rest : null;
+	let rest = command.trim().slice(prefix.trim().length).trimStart();
+	if (rest.startsWith("&&")) rest = rest.slice(2).trimStart();
+	return rest || null;
 }
 
-export function formatHistory(history: readonly ShellDetection[]): string {
-	if (history.length === 0) {
-		return "No bash splits detected yet.";
-	}
-
+export function formatHistory(history: readonly HistoryEntry[]): string {
+	if (!history.length) return "No splits yet.";
 	return history
-		.map((entry, index) => {
-			const lines = [
-				`${index + 1}. [${entry.phase}] ${entry.toolName} (${entry.toolCallId})`,
-				`   command: ${entry.command}`,
-			];
-			if (entry.prefix) {
-				lines.push(`   prefix:  ${entry.prefix}`);
-			}
-			if (entry.suffix) {
-				lines.push(`   suffix:  ${entry.suffix}`);
-			}
-			return lines.join("\n");
+		.map((e, i) => {
+			let line = `${i + 1}. [${e.phase}] ${e.command}\n   prefix: ${e.prefix}`;
+			if (e.suffix) line += `\n   suffix: ${e.suffix}`;
+			return line;
 		})
 		.join("\n\n");
 }

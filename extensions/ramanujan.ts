@@ -1,102 +1,53 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { isBashToolResult, isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { runShellCommand } from "../src/exec.js";
 import { formatHistory, RamanujanState } from "../src/state.js";
 
 const state = new RamanujanState();
 
-type ToolCallBlock = {
-	type: "toolCall";
-	id: string;
-	name: string;
-	arguments?: Record<string, unknown>;
-	partialJson?: string;
-};
-
-function getToolCallBlock(
-	message: { role: string; content?: unknown },
-	contentIndex: number,
-): ToolCallBlock | null {
-	if (message.role !== "assistant" || !Array.isArray(message.content)) {
-		return null;
-	}
-	const block = message.content[contentIndex];
-	if (!block || typeof block !== "object") {
-		return null;
-	}
-	if ((block as ToolCallBlock).type !== "toolCall") {
-		return null;
-	}
-	return block as ToolCallBlock;
+function toolBlock(message: { role: string; content?: unknown }, i: number) {
+	if (message.role !== "assistant" || !Array.isArray(message.content)) return null;
+	const b = message.content[i];
+	return b && typeof b === "object" && (b as { type: string }).type === "toolCall"
+		? (b as { id: string; name: string; arguments?: Record<string, unknown>; partialJson?: string })
+		: null;
 }
 
 export default function (pi: ExtensionAPI) {
-	pi.on("message_update", async (event) => {
+	pi.on("message_update", async (event, ctx) => {
 		const stream = event.assistantMessageEvent;
-		if (!stream || typeof stream !== "object" || !("type" in stream)) {
-			return;
-		}
+		if (!stream || stream.type !== "toolcall_delta") return;
 
-		if (stream.type === "toolcall_start") {
-			if (event.message.role !== "assistant") {
-				return;
-			}
-			const block = getToolCallBlock(event.message, stream.contentIndex);
-			if (!block) {
-				return;
-			}
-			state.onToolCallStart(block.id, block.name);
-			return;
-		}
+		const block = toolBlock(event.message, stream.contentIndex);
+		if (!block || block.name !== "bash") return;
 
-		if (stream.type === "toolcall_delta") {
-			if (event.message.role !== "assistant") {
-				return;
-			}
-			const block = getToolCallBlock(event.message, stream.contentIndex);
-			if (!block) {
-				return;
-			}
-			const parsedCommand =
-				typeof block.arguments?.command === "string"
-					? block.arguments.command
-					: undefined;
-			state.onToolCallDelta(
-				block.id,
-				block.name,
-				block.partialJson ?? "",
-				parsedCommand,
-			);
-		}
+		state.onDelta(
+			block.id,
+			block.partialJson ?? "",
+			(prefix) => runShellCommand(prefix, ctx.cwd, ctx.signal),
+			typeof block.arguments?.command === "string" ? block.arguments.command : undefined,
+		);
 	});
 
 	pi.on("tool_call", async (event) => {
-		if (isToolCallEventType("bash", event)) {
-			state.onToolCallComplete(
-				event.toolCallId,
-				event.toolName,
-				event.input.command,
-			);
-			return;
-		}
-		if (event.toolName === "powershell" && typeof event.input.command === "string") {
-			state.onToolCallComplete(
-				event.toolCallId,
-				event.toolName,
-				event.input.command,
-			);
-		}
+		if (!isToolCallEventType("bash", event)) return;
+		const cmd = await state.prepare(event.toolCallId, event.input.command);
+		if (cmd) event.input.command = cmd;
 	});
 
-	pi.on("turn_end", async () => {
-		state.onTurnEnd();
+	pi.on("tool_result", async (event) => {
+		if (!isBashToolResult(event)) return;
+		return state.stitch(event.toolCallId, event.content, event.isError) ?? undefined;
 	});
+
+	pi.on("turn_end", async () => state.clear());
 
 	pi.registerCommand("ramanujan", {
-		description: "Show detected bash && splits (detect-only mode)",
+		description: "Show speculative && splits",
 		handler: async (args, ctx) => {
 			if (args.trim() === "clear") {
 				state.clearHistory();
-				ctx.ui.notify("Ramanujan history cleared.", "info");
+				ctx.ui.notify("Cleared.", "info");
 				return;
 			}
 			ctx.ui.notify(formatHistory(state.getHistory()), "info");

@@ -1,11 +1,7 @@
 # Plan
 
-## Now
+- Splitter (`src/split.ts`)
+- Allowlist (`src/allowlist.ts`)
+- Speculative exec (`extensions/ramanujan.ts`)
 
-- Command splitter (`src/split.ts`)
-- Pi glue, detect-only (`extensions/ramanujan.ts`) — `/ramanujan` shows what it would split
-
-## Later
-
-- Run the prefix early while the command is still streaming
-- Command cache
+Later: command cache.
