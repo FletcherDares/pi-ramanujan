@@ -1,16 +1,9 @@
-import type {
-	ExtensionAPI,
-	ExtensionContext,
-	SessionEntry,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isBashToolResult, isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { join } from "node:path";
 import { runShellCommand } from "../src/exec.js";
-import {
-	formatStats,
-	isRamanujanStateChange,
-	RAMANUJAN_STATE_ENTRY,
-	RamanujanState,
-} from "../src/state.js";
+import { RamanujanStatsStore } from "../src/stats-store.js";
+import { formatStats, RamanujanState } from "../src/state.js";
 
 function toolBlock(message: { role: string; content?: unknown }, i: number) {
 	if (message.role !== "assistant" || !Array.isArray(message.content)) return null;
@@ -22,26 +15,26 @@ function toolBlock(message: { role: string; content?: unknown }, i: number) {
 
 export default function (pi: ExtensionAPI) {
 	const state = new RamanujanState();
+	let statsStore: RamanujanStatsStore | undefined;
 
-	// Custom entries are persisted in Pi's session JSONL but are not sent to the
-	// model. Store changes rather than full snapshots so the session does not grow
-	// quadratically as the history gets longer.
-	state.setPersistence((change) => pi.appendEntry(RAMANUJAN_STATE_ENTRY, change));
+	// Keep telemetry outside individual conversation files so it survives /new
+	// and can be shared by all sessions for this project.
+	state.setPersistence((change) => {
+		try {
+			statsStore?.append(change);
+		} catch (error) {
+			// Persistence must never break the actual bash tool call.
+			console.error("Failed to persist Ramanujan stats:", error);
+		}
+	});
 
-	const restoreState = (_event: unknown, ctx: ExtensionContext) => {
-		const changes = ctx.sessionManager
-			.getBranch()
-			.filter(
-				(entry): entry is Extract<SessionEntry, { type: "custom" }> =>
-					entry.type === "custom" && entry.customType === RAMANUJAN_STATE_ENTRY,
-			)
-			.map((entry) => entry.data)
-			.filter(isRamanujanStateChange);
-		state.restore(changes);
-	};
-
-	pi.on("session_start", restoreState);
-	pi.on("session_tree", restoreState);
+	pi.on("session_start", (_event, ctx: ExtensionContext) => {
+		const sessionFile = ctx.sessionManager.getSessionFile();
+		statsStore = sessionFile
+			? new RamanujanStatsStore(join(ctx.sessionManager.getSessionDir(), "ramanujan-stats.data"))
+			: undefined;
+		state.restore(statsStore?.load() ?? []);
+	});
 
 	pi.on("message_update", async (event, ctx) => {
 		const stream = event.assistantMessageEvent;

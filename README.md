@@ -10,7 +10,7 @@ pi install ./
 
 `/ramanujan` — show speculation stats. `/ramanujan clear` — clear.
 
-Stats are saved as Pi session entries (not sent to the model), so they survive restarting and resuming a session. A new `/new` session starts with empty stats.
+Stats are saved in Pi's per-project data directory (not sent to the model), so they survive restarts and all `/new` sessions. `/ramanujan clear` resets the project totals.
 
 ```bash
 npm test

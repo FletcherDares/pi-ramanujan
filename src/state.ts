@@ -7,8 +7,6 @@ import { prefixBeforeTrailingAnd } from "./split.js";
 type Launch = (prefix: string, signal: AbortSignal) => Promise<BashExecResult>;
 type PersistStateChange = (change: RamanujanStateChange) => void;
 
-export const RAMANUJAN_STATE_ENTRY = "ramanujan-state";
-
 interface Call {
 	prefix: string;
 	prefixResult: Promise<BashExecResult>;
@@ -26,16 +24,24 @@ export interface SpeculationStats {
 	speculativeMs: number;
 }
 
-/** A compact, session-persisted stats update. It is not sent to the model. */
+/** A compact, project-persisted stats update. It is not sent to the model. */
 export interface RamanujanStateChange {
 	version: 1;
-	stats: SpeculationStats;
+	kind: "update" | "clear";
+	speculations: number;
+	speculativeMs: number;
 }
 
 export function isRamanujanStateChange(value: unknown): value is RamanujanStateChange {
 	if (!value || typeof value !== "object") return false;
 	const change = value as Partial<RamanujanStateChange>;
-	return change.version === 1 && isStats(change.stats);
+	return (
+		change.version === 1 &&
+		(change.kind === "update" || change.kind === "clear") &&
+		numberIsFiniteNonNegative(change.speculations) &&
+		Number.isInteger(change.speculations) &&
+		numberIsFiniteNonNegative(change.speculativeMs)
+	);
 }
 
 export class RamanujanState {
@@ -52,7 +58,14 @@ export class RamanujanState {
 	restore(changes: readonly RamanujanStateChange[]): void {
 		this.disposeCalls(true);
 		this.stats = { speculations: 0, speculativeMs: 0 };
-		for (const change of changes) this.stats = { ...change.stats };
+		for (const change of changes) {
+			if (change.kind === "clear") {
+				this.stats = { speculations: 0, speculativeMs: 0 };
+				continue;
+			}
+			this.stats.speculations += change.speculations;
+			this.stats.speculativeMs += change.speculativeMs;
+		}
 	}
 
 	onDelta(
@@ -71,19 +84,19 @@ export class RamanujanState {
 		const prefix = prefixBeforeTrailingAnd(command);
 		if (!prefix || prefix === existing?.prefix) return;
 
-		let statsChanged = false;
+		let speculativeMs = 0;
 		if (existing) {
-			statsChanged = this.account(existing);
+			speculativeMs = this.account(existing);
 			this.disposeCall(existing, true);
 			this.calls.delete(toolCallId);
 		}
 
 		if (!isPreExecutable(prefix)) {
-			if (statsChanged) this.emit();
+			if (speculativeMs) this.emit(0, speculativeMs);
 			return;
 		}
 		if (parentSignal?.aborted) {
-			if (statsChanged) this.emit();
+			if (speculativeMs) this.emit(0, speculativeMs);
 			return;
 		}
 
@@ -121,14 +134,15 @@ export class RamanujanState {
 		);
 		this.calls.set(toolCallId, call);
 		this.stats.speculations++;
-		this.emit();
+		this.emit(1, speculativeMs);
 	}
 
 	async prepare(toolCallId: string, command: string): Promise<string | null> {
 		const call = this.calls.get(toolCallId);
 		if (!call) return null;
 
-		if (this.account(call)) this.emit();
+		const speculativeMs = this.account(call);
+		if (speculativeMs) this.emit(0, speculativeMs);
 		const matchesPrefix = commandUsesPrefix(command, call.prefix);
 		call.suffix = matchesPrefix ? suffixAfterPrefix(command, call.prefix) : null;
 
@@ -187,13 +201,13 @@ export class RamanujanState {
 	}
 
 	clear(): void {
-		let statsChanged = false;
+		let speculativeMs = 0;
 		for (const call of this.calls.values()) {
-			statsChanged = this.account(call) || statsChanged;
+			speculativeMs += this.account(call);
 			this.disposeCall(call, true);
 		}
 		this.calls.clear();
-		if (statsChanged) this.emit();
+		if (speculativeMs) this.emit(0, speculativeMs);
 	}
 
 	getStats(): SpeculationStats {
@@ -203,18 +217,23 @@ export class RamanujanState {
 	clearStats(): void {
 		this.disposeCalls(true);
 		this.stats = { speculations: 0, speculativeMs: 0 };
-		this.emit();
+		this.emitClear();
 	}
 
-	private account(call: Call): boolean {
-		if (call.accounted) return false;
+	private account(call: Call): number {
+		if (call.accounted) return 0;
 		call.accounted = true;
-		this.stats.speculativeMs += Math.max(0, (call.endedAt ?? this.now()) - call.startedAt);
-		return true;
+		const speculativeMs = Math.max(0, (call.endedAt ?? this.now()) - call.startedAt);
+		this.stats.speculativeMs += speculativeMs;
+		return speculativeMs;
 	}
 
-	private emit(): void {
-		this.persist?.({ version: 1, stats: { ...this.stats } });
+	private emit(speculations: number, speculativeMs: number): void {
+		this.persist?.({ version: 1, kind: "update", speculations, speculativeMs });
+	}
+
+	private emitClear(): void {
+		this.persist?.({ version: 1, kind: "clear", speculations: 0, speculativeMs: 0 });
 	}
 
 	private disposeCalls(abort: boolean): void {
