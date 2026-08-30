@@ -1,16 +1,11 @@
 # Plan
 
-## Now: command splitter
+## Now
 
-If a bash command ends with `&&` at the top level (not inside quotes), return the left-hand side.
-
-Example: `git status &&` → `git status`
-
-Example: `echo 'a && b' && git status &&` → `echo 'a && b' && git status`
-
-If the string does not end with `&&`, or quotes are unclosed, return nothing.
+- Command splitter (`src/split.ts`)
+- Pi glue, detect-only (`extensions/ramanujan.ts`) — `/ramanujan` shows what it would split
 
 ## Later
 
-- Speculative execution (run the prefix while the command is still streaming)
+- Run the prefix early while the command is still streaming
 - Command cache

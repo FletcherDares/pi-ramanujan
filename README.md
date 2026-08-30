@@ -1,10 +1,32 @@
 # pi-ramanujan
 
-Speculative tool caller for the [Pi](https://pi.dev/) harness.
+Speculative `&&` splitter for the [Pi](https://pi.dev/) harness.
 
-Right now this repo only has the **command splitter**: given a bash string that ends with `&&`, return the left-hand side. See [plan/README.md](plan/README.md).
+**Detect-only for now** — watches bash commands as they stream, finds complete prefixes before `&&`, and logs them. Does not run commands early yet.
+
+## Install
+
+```bash
+pi install ./
+```
+
+Or from git once published:
+
+```bash
+pi install git:github.com/FletcherDares/pi-ramanujan
+```
+
+## Usage
+
+The model uses `bash` as usual. Ramanujan hooks in automatically.
+
+- `/ramanujan` — show detected splits this session
+- `/ramanujan clear` — clear history
+
+## Dev
 
 ```bash
 npm install
 npm test
+npm run typecheck
 ```
