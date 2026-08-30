@@ -11,22 +11,30 @@ const ok = async () => ({ output: "prefix-out", exitCode: 0, cancelled: false })
 const fail = async () => ({ output: "prefix-err", exitCode: 1, cancelled: false });
 
 describe("RamanujanState", () => {
-	it("launches each eligible command in a chain in parallel", async () => {
+	it("launches every eligible command in a chain before any completes", async () => {
 		const launched: string[] = [];
+		const pending: Array<(result: BashExecResult) => void> = [];
 		const state = new RamanujanState();
-		state.onDelta("id-1", '{"command":"git status &&"}', async (command) => {
+		const launch = async (command: string) => {
 			launched.push(command);
-			return { output: command, exitCode: 0, cancelled: false };
-		});
-		state.onDelta("id-1", '{"command":"git status && git branch &&"}', async (command) => {
-			launched.push(command);
-			return { output: command, exitCode: 0, cancelled: false };
-		});
+			return new Promise<BashExecResult>((resolve) => pending.push(resolve));
+		};
 
-		expect(launched).toEqual(["git status", "git branch"]);
-		expect(await state.prepare("id-1", "git status && git branch && git status")).toBe("git status");
+		state.onDelta("id-1", '{"command":"git status &&"}', launch);
+		state.onDelta("id-1", '{"command":"git status && git branch &&"}', launch);
+		state.onDelta("id-1", '{"command":"git status && git branch && git status &&"}', launch);
+
+		expect(launched).toEqual(["git status", "git branch", "git status"]);
+		expect(pending).toHaveLength(3);
+		pending.forEach((resolve, index) =>
+			resolve({ output: `output-${index + 1}`, exitCode: 0, cancelled: false }),
+		);
+
+		expect(await state.prepare("id-1", "git status && git branch && git status && git branch")).toBe(
+			"git branch",
+		);
 		const result = state.stitch("id-1", [{ type: "text", text: "suffix" }], false);
-		expect(result?.content[0]?.text).toBe("git status\ngit branch\nsuffix");
+		expect(result?.content[0]?.text).toBe("output-1\noutput-2\noutput-3\nsuffix");
 	});
 
 	it("launches allowlisted prefix on stream", () => {
