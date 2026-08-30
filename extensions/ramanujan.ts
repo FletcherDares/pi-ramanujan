@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isBashToolResult, isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { runShellCommand } from "../src/exec.js";
 import { RamanujanStatsStore } from "../src/stats-store.js";
@@ -15,10 +16,10 @@ function toolBlock(message: { role: string; content?: unknown }, i: number) {
 
 export default function (pi: ExtensionAPI) {
 	const state = new RamanujanState();
-	let statsStore: RamanujanStatsStore | undefined;
+	// Keep telemetry outside conversation and project files so it is shared by
+	// every Pi session and project for this user.
+	const statsStore = new RamanujanStatsStore(join(homedir(), ".pi", "ramanujan-stats.data"));
 
-	// Keep telemetry outside individual conversation files so it survives /new
-	// and can be shared by all sessions for this project.
 	state.setPersistence((change) => {
 		try {
 			statsStore?.append(change);
@@ -28,12 +29,8 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("session_start", (_event, ctx: ExtensionContext) => {
-		const sessionFile = ctx.sessionManager.getSessionFile();
-		statsStore = sessionFile
-			? new RamanujanStatsStore(join(ctx.sessionManager.getSessionDir(), "ramanujan-stats.data"))
-			: undefined;
-		state.restore(statsStore?.load() ?? []);
+	pi.on("session_start", (_event, _ctx: ExtensionContext) => {
+		state.restore(statsStore.load());
 	});
 
 	pi.on("message_update", async (event, ctx) => {
@@ -74,6 +71,8 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Cleared.", "info");
 				return;
 			}
+			// Refresh so changes made by other running Pi sessions are visible.
+			state.restore(statsStore.load());
 			ctx.ui.notify(formatStats(state.getStats()), "info");
 		},
 	});
