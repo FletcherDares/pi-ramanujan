@@ -11,6 +11,24 @@ const ok = async () => ({ output: "prefix-out", exitCode: 0, cancelled: false })
 const fail = async () => ({ output: "prefix-err", exitCode: 1, cancelled: false });
 
 describe("RamanujanState", () => {
+	it("launches each eligible command in a chain in parallel", async () => {
+		const launched: string[] = [];
+		const state = new RamanujanState();
+		state.onDelta("id-1", '{"command":"git status &&"}', async (command) => {
+			launched.push(command);
+			return { output: command, exitCode: 0, cancelled: false };
+		});
+		state.onDelta("id-1", '{"command":"git status && git branch &&"}', async (command) => {
+			launched.push(command);
+			return { output: command, exitCode: 0, cancelled: false };
+		});
+
+		expect(launched).toEqual(["git status", "git branch"]);
+		expect(await state.prepare("id-1", "git status && git branch && git status")).toBe("git status");
+		const result = state.stitch("id-1", [{ type: "text", text: "suffix" }], false);
+		expect(result?.content[0]?.text).toBe("git status\ngit branch\nsuffix");
+	});
+
 	it("launches allowlisted prefix on stream", () => {
 		const state = new RamanujanState();
 		let launched = false;

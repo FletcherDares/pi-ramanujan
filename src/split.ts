@@ -1,3 +1,46 @@
+/** Split a command at top-level `&&` operators, preserving quoted operators. */
+export function splitTopLevelAndChain(command: string): string[] | null {
+	if (!isSafelyParseable(command)) return null;
+
+	const parts: string[] = [];
+	let start = 0;
+	let inSingle = false;
+	let inDouble = false;
+	let inBacktick = false;
+
+	for (let i = 0; i < command.length; i++) {
+		const ch = command[i];
+		if (inSingle) {
+			if (ch === "'") inSingle = false;
+			continue;
+		}
+		if (inDouble) {
+			if (ch === "\\") i++;
+			else if (ch === '"') inDouble = false;
+			continue;
+		}
+		if (inBacktick) {
+			if (ch === "`") inBacktick = false;
+			continue;
+		}
+		if (ch === "'") inSingle = true;
+		else if (ch === '"') inDouble = true;
+		else if (ch === "`") inBacktick = true;
+		else if (ch === "&" && command[i + 1] === "&") {
+			const part = command.slice(start, i).trim();
+			if (!part) return null;
+			parts.push(part);
+			start = i + 2;
+			i++;
+		}
+	}
+
+	const last = command.slice(start).trim();
+	if (!last) return null;
+	parts.push(last);
+	return parts;
+}
+
 /**
  * If `command` ends with a top-level `&&`, return the left-hand side.
  * Returns null when there is no complete prefix, or when parsing is unsafe.
