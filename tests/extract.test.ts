@@ -20,6 +20,14 @@ describe("extractPartialCommand", () => {
 		);
 	});
 
+	it("decodes unicode escapes", () => {
+		expect(extractPartialCommand('{"command":"echo \\u2603 &&"}')).toBe("echo ☃ &&");
+	});
+
+	it("does not guess an incomplete unicode escape", () => {
+		expect(extractPartialCommand('{"command":"echo \\u26')).toBe("echo ");
+	});
+
 	it("returns null when command is missing", () => {
 		expect(extractPartialCommand('{"timeout":30')).toBeNull();
 	});

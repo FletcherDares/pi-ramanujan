@@ -17,13 +17,14 @@ export async function runShellCommand(
 
 	const result = await operations.exec(command, cwd, {
 		onData: (data) => {
-			chunks.push(decoder.decode(data));
+			// Keep incomplete multi-byte UTF-8 sequences for the next chunk.
+			chunks.push(decoder.decode(data, { stream: true }));
 		},
 		signal,
 	});
 
 	return {
-		output: chunks.join(""),
+		output: chunks.join("") + decoder.decode(),
 		exitCode: signal?.aborted ? undefined : (result.exitCode ?? undefined),
 		cancelled: signal?.aborted ?? false,
 	};

@@ -8,7 +8,9 @@ Allowlist: `git status`, `git branch` (`src/allowlist.ts`).
 pi install ./
 ```
 
-`/ramanujan` — show splits. `/ramanujan clear` — clear.
+`/ramanujan` — show speculation stats. `/ramanujan clear` — clear.
+
+Stats are saved as Pi session entries (not sent to the model), so they survive restarting and resuming a session. A new `/new` session starts with empty stats.
 
 ```bash
 npm test
