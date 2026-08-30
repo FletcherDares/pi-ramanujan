@@ -22,17 +22,20 @@ describe("RamanujanState", () => {
 
 		state.onDelta("id-1", '{"command":"git status &&"}', launch);
 		state.onDelta("id-1", '{"command":"git status && git branch &&"}', launch);
-		state.onDelta("id-1", '{"command":"git status && git branch && git status &&"}', launch);
+		state.onDelta("id-1", '{"command":"git status && git branch && git log -2 --oneline &&"}', launch);
 
-		expect(launched).toEqual(["git status", "git branch", "git status"]);
+		expect(launched).toEqual(["git status", "git branch", "git log -2 --oneline"]);
 		expect(pending).toHaveLength(3);
 		pending.forEach((resolve, index) =>
 			resolve({ output: `output-${index + 1}`, exitCode: 0, cancelled: false }),
 		);
 
-		expect(await state.prepare("id-1", "git status && git branch && git status && git branch")).toBe(
-			"git branch",
-		);
+		expect(
+			await state.prepare(
+				"id-1",
+				"git status && git branch && git log -2 --oneline && git branch",
+			),
+		).toBe("git branch");
 		const result = state.stitch("id-1", [{ type: "text", text: "suffix" }], false);
 		expect(result?.content[0]?.text).toBe("output-1\noutput-2\noutput-3\nsuffix");
 	});
