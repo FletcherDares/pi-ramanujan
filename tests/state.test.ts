@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatStats, RamanujanState } from "../src/state";
+import {
+	formatStats,
+	RamanujanState,
+	type RamanujanStateChange,
+	suffixAfterPrefix,
+} from "../src/state";
 import type { BashExecResult } from "../src/exec";
 
 const ok = async () => ({ output: "prefix-out", exitCode: 0, cancelled: false });
@@ -54,6 +59,39 @@ describe("RamanujanState", () => {
 		now = 200;
 		resolve({ output: "prefix-out", exitCode: 0, cancelled: false });
 		expect(await prepared).toBe("git branch");
+	});
+
+	it("does not accept a command that only shares a prefix", async () => {
+		expect(suffixAfterPrefix("git statusful && git branch", "git status")).toBeNull();
+
+		const state = new RamanujanState();
+		state.onDelta("id-1", '{"command":"git status &&"}', ok);
+		expect(await state.prepare("id-1", "git statusful && git branch")).toBeNull();
+		expect(state.stitch("id-1", [{ type: "text", text: "real output" }], false)).toBeNull();
+	});
+
+	it("restores persisted stats", async () => {
+		const changes: RamanujanStateChange[] = [];
+		const state = new RamanujanState(() => 100);
+		state.setPersistence((change) => changes.push(change));
+		state.onDelta("id-1", '{"command":"git status &&"}', ok);
+		await state.prepare("id-1", "git status && git branch");
+
+		const restored = new RamanujanState();
+		restored.restore(changes);
+		expect(restored.getStats()).toEqual(state.getStats());
+	});
+
+	it("persists clearing stats", () => {
+		const changes: RamanujanStateChange[] = [];
+		const state = new RamanujanState();
+		state.setPersistence((change) => changes.push(change));
+		state.onDelta("id-1", '{"command":"git status &&"}', ok);
+		state.clearStats();
+
+		const restored = new RamanujanState();
+		restored.restore(changes);
+		expect(restored.getStats()).toEqual({ speculations: 0, speculativeMs: 0 });
 	});
 
 	it("formats stats", () => {

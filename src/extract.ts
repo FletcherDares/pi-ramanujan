@@ -36,7 +36,14 @@ export function extractPartialCommand(partialJson: string): string | null {
 			if (i >= partialJson.length) {
 				break;
 			}
-			result += decodeJsonEscape(partialJson[i]);
+			if (partialJson[i] === "u") {
+				const code = partialJson.slice(i + 1, i + 5);
+				if (!/^[0-9a-fA-F]{4}$/.test(code)) break;
+				result += String.fromCharCode(Number.parseInt(code, 16));
+				i += 4;
+			} else {
+				result += decodeJsonEscape(partialJson[i]);
+			}
 		} else {
 			result += ch;
 		}
@@ -64,8 +71,6 @@ function decodeJsonEscape(ch: string): string {
 			return "\b";
 		case "f":
 			return "\f";
-		case "u":
-			return "\\u";
 		default:
 			return ch;
 	}
