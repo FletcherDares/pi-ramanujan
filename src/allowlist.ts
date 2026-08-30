@@ -1,52 +1,63 @@
-const ALLOW = new Set([
-	"git status",
-	"git status --short",
-	"git status --porcelain",
-	"git branch",
-	"git branch --show-current",
-	"git branch -a",
-	"git diff",
-	"git diff --stat",
-	"git diff --shortstat",
-	"git diff --name-only",
-	"git diff --name-status",
-	"git log",
-	"git log --oneline",
-	"git show",
-	"git show --stat",
-	"git show --oneline --stat",
-	"git remote -v",
-	"git tag",
-	"git rev-parse --show-toplevel",
-	"git rev-parse --abbrev-ref HEAD",
-	"git rev-parse --is-inside-work-tree",
-	"git ls-files",
+const READ_ONLY_GIT_COMMANDS = new Set([
+	"status",
+	"branch",
+	"diff",
+	"log",
+	"show",
+	"remote",
+	"tag",
+	"rev-parse",
+	"ls-files",
 ]);
+
+const MUTATING_OR_EXTERNAL_OPTIONS = [
+	"--output",
+	"--exec",
+	"--ext-diff",
+	"--textconv",
+];
 
 export function isPreExecutable(command: string): boolean {
 	const normalized = command.trim().replace(/\s+/g, " ");
-	return ALLOW.has(normalized) || isReadOnlyGitLog(normalized);
+	return isReadOnlyGitCommand(normalized);
 }
 
 /**
- * `git log` has a deliberately open-ended, read-only argument grammar. Keep
- * accepting its normal filters and formatting options without having to grow
- * the allowlist for every useful invocation, while excluding options that can
- * write files, execute commands, or invoke external tooling.
+ * Accept read-only git commands with arbitrary normal arguments. Git's option
+ * sets are intentionally not duplicated here: new filters, revisions, and
+ * formatting options should not require an allowlist change.
  */
-function isReadOnlyGitLog(command: string): boolean {
-	if (!/^git log(?: .*)?$/.test(command)) return false;
+function isReadOnlyGitCommand(command: string): boolean {
+	if (!/^git [a-z-]+(?: .*)?$/.test(command)) return false;
 	if (/[;&|<>$`\n\r]/.test(command)) return false;
 
-	const args = command.slice("git log".length).trim().split(/\s+/).filter(Boolean);
-	return !args.some(
-		(arg) =>
-			arg === "-o" ||
-			arg === "--output" ||
-			arg.startsWith("--output=") ||
-			arg === "--exec" ||
-			arg.startsWith("--exec=") ||
-			arg === "--ext-diff" ||
-			arg === "--textconv",
+	const [, name, rawArgs = ""] = command.match(/^git ([a-z-]+)(?: (.*))?$/) ?? [];
+	if (!READ_ONLY_GIT_COMMANDS.has(name)) return false;
+
+	const args = rawArgs.split(/\s+/).filter(Boolean);
+	if (args.some(isMutatingOrExternalOption)) return false;
+
+	// These commands accept positional arguments that are data to inspect.
+	if (["status", "diff", "log", "show", "rev-parse", "ls-files"].includes(name)) {
+		return true;
+	}
+
+	// `git branch NAME` and `git tag NAME` create refs. Only option-only forms
+	// are speculative; this still covers listing, formatting, and filtering.
+	if (name === "branch" || name === "tag") {
+		return args.every((arg) => arg.startsWith("-"));
+	}
+
+	// Remote inspection has a small, explicit read-only subcommand grammar.
+	return args.length === 0 || ["-v", "--verbose", "show", "get-url"].includes(args[0]);
+}
+
+function isMutatingOrExternalOption(arg: string): boolean {
+	return (
+		arg === "-o" ||
+		MUTATING_OR_EXTERNAL_OPTIONS.some(
+			(option) => arg === option || arg.startsWith(`${option}=`),
+		) ||
+		["--delete", "-d", "-D", "--move", "-m", "-M", "--copy", "-c", "-C", "--force", "-f"].includes(arg)
 	);
 }
