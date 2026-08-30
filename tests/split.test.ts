@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { prefixBeforeTrailingAnd } from "../src/split";
+import { prefixBeforeTrailingAnd, splitTopLevelAndChain } from "../src/split";
+
+describe("splitTopLevelAndChain", () => {
+	it("splits top-level commands without splitting quoted &&", () => {
+		expect(splitTopLevelAndChain("git status && git branch && echo 'a && b'")).toEqual([
+			"git status",
+			"git branch",
+			"echo 'a && b'",
+		]);
+	});
+});
 
 describe("prefixBeforeTrailingAnd", () => {
 	it("returns the prefix when the command ends with &&", () => {

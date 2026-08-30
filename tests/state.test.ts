@@ -11,6 +11,32 @@ const ok = async () => ({ output: "prefix-out", exitCode: 0, cancelled: false })
 const fail = async () => ({ output: "prefix-err", exitCode: 1, cancelled: false });
 
 describe("RamanujanState", () => {
+	it("launches every eligible command in a chain before any completes", async () => {
+		const launched: string[] = [];
+		const pending: Array<(result: BashExecResult) => void> = [];
+		const state = new RamanujanState();
+		const launch = async (command: string) => {
+			launched.push(command);
+			return new Promise<BashExecResult>((resolve) => pending.push(resolve));
+		};
+
+		state.onDelta("id-1", '{"command":"git status &&"}', launch);
+		state.onDelta("id-1", '{"command":"git status && git branch &&"}', launch);
+		state.onDelta("id-1", '{"command":"git status && git branch && git status &&"}', launch);
+
+		expect(launched).toEqual(["git status", "git branch", "git status"]);
+		expect(pending).toHaveLength(3);
+		pending.forEach((resolve, index) =>
+			resolve({ output: `output-${index + 1}`, exitCode: 0, cancelled: false }),
+		);
+
+		expect(await state.prepare("id-1", "git status && git branch && git status && git branch")).toBe(
+			"git branch",
+		);
+		const result = state.stitch("id-1", [{ type: "text", text: "suffix" }], false);
+		expect(result?.content[0]?.text).toBe("output-1\noutput-2\noutput-3\nsuffix");
+	});
+
 	it("launches allowlisted prefix on stream", () => {
 		const state = new RamanujanState();
 		let launched = false;

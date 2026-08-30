@@ -2,16 +2,16 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateTail } from "
 import type { BashExecResult } from "./exec.js";
 import { isPreExecutable } from "./allowlist.js";
 import { extractPartialCommand } from "./extract.js";
-import { prefixBeforeTrailingAnd } from "./split.js";
+import { prefixBeforeTrailingAnd, splitTopLevelAndChain } from "./split.js";
 
 type Launch = (prefix: string, signal: AbortSignal) => Promise<BashExecResult>;
 type PersistStateChange = (change: RamanujanStateChange) => void;
 
 interface Call {
 	prefix: string;
-	prefixResult: Promise<BashExecResult>;
+	speculations: Array<{ command: string; result: Promise<BashExecResult> }>;
 	suffix: string | null;
-	prefixOutput?: BashExecResult;
+	prefixOutput?: BashExecResult[];
 	startedAt: number;
 	endedAt?: number;
 	accounted?: boolean;
@@ -82,16 +82,29 @@ export class RamanujanState {
 
 		const existing = this.calls.get(toolCallId);
 		const prefix = prefixBeforeTrailingAnd(command);
-		if (!prefix || prefix === existing?.prefix) return;
+		const parts = prefix ? splitTopLevelAndChain(prefix) : null;
+		if (!prefix || !parts) return;
 
+		let call = existing;
 		let speculativeMs = 0;
-		if (existing) {
-			speculativeMs = this.account(existing);
-			this.disposeCall(existing, true);
+		const retained = Boolean(
+			call &&
+			call.speculations.every((_, index) => parts[index] === call!.speculations[index]?.command),
+		);
+		if (call && !retained) {
+			speculativeMs = this.account(call);
+			this.disposeCall(call, true);
 			this.calls.delete(toolCallId);
+			call = undefined;
 		}
 
-		if (!isPreExecutable(prefix)) {
+		const launchParts = parts.slice(call?.speculations.length ?? 0);
+		const eligibleParts: string[] = [];
+		for (const part of launchParts) {
+			if (!isPreExecutable(part)) break;
+			eligibleParts.push(part);
+		}
+		if (!eligibleParts.length) {
 			if (speculativeMs) this.emit(0, speculativeMs);
 			return;
 		}
@@ -100,41 +113,36 @@ export class RamanujanState {
 			return;
 		}
 
-		const controller = new AbortController();
+		const controller = call?.controller ?? new AbortController();
 		let removeParentAbort: (() => void) | undefined;
-		if (parentSignal) {
+		if (!call && parentSignal) {
 			const abort = () => controller.abort();
 			parentSignal.addEventListener("abort", abort, { once: true });
 			removeParentAbort = () => parentSignal.removeEventListener("abort", abort);
 		}
 
-		const startedAt = this.now();
-		let prefixResult: Promise<BashExecResult>;
-		try {
-			prefixResult = Promise.resolve(launch(prefix, controller.signal));
-		} catch (error) {
-			prefixResult = Promise.reject(error);
+		const startedAt = call?.startedAt ?? this.now();
+		const speculations = call?.speculations ?? [];
+		for (const part of eligibleParts) {
+			let result: Promise<BashExecResult>;
+			try {
+				result = Promise.resolve(launch(part, controller.signal));
+			} catch (error) {
+				result = Promise.reject(error);
+			}
+			speculations.push({ command: part, result });
 		}
-
-		const call: Call = {
-			prefix,
-			prefixResult,
-			suffix: null,
-			startedAt,
-			controller,
-			removeParentAbort,
-		};
-		prefixResult.then(
-			() => {
-				call.endedAt = this.now();
-			},
-			() => {
-				call.endedAt = this.now();
-			},
-		);
-		this.calls.set(toolCallId, call);
-		this.stats.speculations++;
-		this.emit(1, speculativeMs);
+		if (!call) {
+			call = { prefix: eligibleParts.join(" && "), speculations, suffix: null, startedAt, controller, removeParentAbort };
+			this.calls.set(toolCallId, call);
+		} else {
+			call.prefix = speculations.map((item) => item.command).join(" && ");
+		}
+		for (const speculation of speculations.slice(-eligibleParts.length)) {
+			speculation.result.then(() => { call!.endedAt = this.now(); }, () => { call!.endedAt = this.now(); });
+		}
+		this.stats.speculations += eligibleParts.length;
+		this.emit(eligibleParts.length, speculativeMs);
 	}
 
 	async prepare(toolCallId: string, command: string): Promise<string | null> {
@@ -146,18 +154,19 @@ export class RamanujanState {
 		const matchesPrefix = commandUsesPrefix(command, call.prefix);
 		call.suffix = matchesPrefix ? suffixAfterPrefix(command, call.prefix) : null;
 
-		let prefixOutput: BashExecResult;
-		try {
-			prefixOutput = await call.prefixResult;
-		} catch {
-			prefixOutput = { output: "", exitCode: undefined, cancelled: true };
+		const prefixOutput: BashExecResult[] = [];
+		for (const speculation of call.speculations) {
+			try {
+				prefixOutput.push(await speculation.result);
+			} catch {
+				prefixOutput.push({ output: "", exitCode: undefined, cancelled: true });
+			}
 		}
 		this.cleanupParentAbort(call);
 
-		const failed =
-			prefixOutput.exitCode !== 0 ||
-			prefixOutput.exitCode === undefined ||
-			prefixOutput.cancelled;
+		const failed = prefixOutput.some(
+			(output) => output.exitCode !== 0 || output.exitCode === undefined || output.cancelled,
+		);
 		if (matchesPrefix) call.prefixOutput = prefixOutput;
 
 		if (!matchesPrefix) return null;
@@ -173,17 +182,15 @@ export class RamanujanState {
 		const call = this.calls.get(toolCallId);
 		if (!call?.prefixOutput) return null;
 
-		const failed =
-			call.prefixOutput.exitCode !== 0 ||
-			call.prefixOutput.exitCode === undefined ||
-			call.prefixOutput.cancelled;
+		const failed = call.prefixOutput.some(
+			(output) => output.exitCode !== 0 || output.exitCode === undefined || output.cancelled,
+		);
 		const suffix = suffixContent
 			.filter((b) => b.type === "text" && b.text)
 			.map((b) => b.text as string)
 			.join("");
-		const fullText = failed
-			? call.prefixOutput.output
-			: [call.prefixOutput.output, suffix].filter(Boolean).join("\n");
+		const prefix = call.prefixOutput.map((output) => output.output).filter(Boolean).join("\n");
+		const fullText = failed ? prefix : [prefix, suffix].filter(Boolean).join("\n");
 		const truncation = truncateTail(fullText, {
 			maxLines: DEFAULT_MAX_LINES,
 			maxBytes: DEFAULT_MAX_BYTES,
