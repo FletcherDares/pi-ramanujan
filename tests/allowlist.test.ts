@@ -28,6 +28,10 @@ describe("isPreExecutable", () => {
 			"git rev-parse --abbrev-ref HEAD",
 			"git rev-parse --is-inside-work-tree",
 			"git ls-files",
+			"git diff --cached HEAD -- src/index.ts",
+			"git status --short --untracked-files=all",
+			"git log --decorate --graph --oneline --all",
+			"git show HEAD:src/index.ts",
 		]) {
 			expect(isPreExecutable(command)).toBe(true);
 		}
@@ -43,12 +47,17 @@ describe("isPreExecutable", () => {
 			"git commit -m message",
 			"git branch -d old-branch",
 			"git checkout main",
+			"git commit -m message",
+			"git checkout main",
 			"git diff --output=changes.patch",
 			"git log --output=history.txt",
 			"git log --exec=touch\ hacked",
 			"git log --ext-diff",
 			"git log --format=%H; rm -rf .",
-			"git show HEAD",
+			"git branch new-branch",
+			"git branch -d old-branch",
+			"git tag release-1",
+			"git remote add origin https://example.com/repo.git",
 			"git fetch",
 			"git status && git branch",
 		]) {
