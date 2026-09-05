@@ -1,7 +1,3 @@
-/**
- * Pull the bash `command` string out of a partial tool-call JSON blob.
- * Works before the JSON is complete (no closing quote yet).
- */
 export function extractPartialCommand(partialJson: string): string | null {
 	const key = '"command"';
 	const keyIndex = partialJson.indexOf(key);

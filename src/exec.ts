@@ -17,7 +17,6 @@ export async function runShellCommand(
 
 	const result = await operations.exec(command, cwd, {
 		onData: (data) => {
-			// Keep incomplete multi-byte UTF-8 sequences for the next chunk.
 			chunks.push(decoder.decode(data, { stream: true }));
 		},
 		signal,
