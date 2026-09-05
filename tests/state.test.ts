@@ -40,6 +40,20 @@ describe("RamanujanState", () => {
 		expect(result?.content[0]?.text).toBe("output-1\noutput-2\noutput-3\nsuffix");
 	});
 
+	it("passes through when off without launching speculation", async () => {
+		const state = new RamanujanState();
+		state.setMode("off");
+		let launches = 0;
+		state.onDelta("id-1", '{"command":"git status &&"}', async () => {
+			launches++;
+			return ok();
+		});
+
+		expect(launches).toBe(0);
+		expect(await state.prepare("id-1", "git status && git branch")).toBeNull();
+		expect(state.stitch("id-1", [{ type: "text", text: "normal" }], false)).toBeNull();
+	});
+
 	it("launches allowlisted prefix on stream", () => {
 		const state = new RamanujanState();
 		let launched = false;

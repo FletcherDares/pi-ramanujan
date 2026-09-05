@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { runShellCommand } from "../src/exec.js";
 import { RamanujanStatsStore } from "../src/stats-store.js";
 import { formatStats, RamanujanState } from "../src/state.js";
+import { readRamanujanMode } from "../src/mode.js";
 
 function toolBlock(message: { role: string; content?: unknown }, i: number) {
 	if (message.role !== "assistant" || !Array.isArray(message.content)) return null;
@@ -31,6 +32,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("message_update", async (event, ctx) => {
+		if (!state.isEnabled()) return;
+
 		const stream = event.assistantMessageEvent;
 		if (!stream || stream.type !== "toolcall_delta") return;
 
@@ -47,12 +50,14 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (event) => {
+		if (!state.isEnabled()) return;
 		if (!isToolCallEventType("bash", event)) return;
 		const cmd = await state.prepare(event.toolCallId, event.input.command);
 		if (cmd) event.input.command = cmd;
 	});
 
 	pi.on("tool_result", async (event) => {
+		if (!state.isEnabled()) return;
 		if (!isBashToolResult(event)) return;
 		return state.stitch(event.toolCallId, event.content, event.isError) ?? undefined;
 	});
