@@ -57,12 +57,10 @@ An arbitrary command against a mutable filesystem cannot meet an unconditional e
 
 | Mode | Behavior | Intended status |
 |---|---|---|
-| `off` | No acceleration | Escape hatch |
-| `observe` | Parse and measure opportunities; execute nothing speculatively | Initial default |
-| `strict` | Only adapters with a documented equivalence argument and compatible authorization/backend | Release target |
-| `experimental` | Explicitly opted-in assumptions about stable worktrees or local prefetch | Separate, not marketed as 100% correct |
+| `off` | No acceleration | Initial default and escape hatch |
+| `on` | Run only adapters with a documented equivalence argument and compatible authorization/backend | Opt-in release mode |
 
-“Shadow mode” must not be ambiguous: observation-only mode launches nothing. Executing a second copy for comparison belongs in disposable test fixtures, not arbitrary user repositories.
+Diagnostics and measurement must not execute speculative work; comparison runs belong in disposable test fixtures, not arbitrary user repositories.
 
 ## 2. Correctness and performance findings
 
@@ -166,7 +164,7 @@ For mutable reads, prefer accelerating downstream processing of bytes acquired b
 
 ### PR 1 — Contain the prototype and correct its claims (small)
 
-- [ ] Add `off` / execution-free `observe` modes; make observation the default until strict eligibility exists.
+- [ ] Add `on` / `off` modes; make `off` the default until the on-mode eligibility contract exists.
 - [ ] Add the concrete P0 eligibility regressions before changing the classifier.
 - [ ] Separate stats lifecycle from execution lifecycle.
 - [ ] Fix README allowlist/storage descriptions and link this roadmap.
@@ -192,14 +190,14 @@ For mutable reads, prefer accelerating downstream processing of bytes acquired b
 - [ ] Move persistence off streaming/preflight paths; keep commands, paths, outputs, and prompts out of default telemetry. Raw event capture is explicit opt-in and potentially sensitive.
 - [ ] Add `/ramanujan status`, `/ramanujan stats`, and `/ramanujan doctor`; counters must be safe to inspect mid-turn and useful without TUI-only components.
 
-**Done when:** a report distinguishes “work overlapped” from measured end-to-end savings and shows observer overhead against extension-disabled runs.
+**Done when:** a report distinguishes “work overlapped” from measured end-to-end savings and shows accelerator overhead against `off` runs.
 
-### PR 4 — Adapter engine and one strict vertical slice (large)
+### PR 4 — Adapter engine and one on-mode vertical slice (large)
 
 - [ ] Implement parser/candidate identity, typed outcomes, budgeted scheduler, and execution-time adoption.
 - [ ] Prove wrapper passthrough first: identical behavior with no hits.
 - [ ] Choose the first actual optimization from PR 3 data: pure preparation, computation over already-authoritative immutable bytes, or a cooperating tool with explicitly immutable inputs.
-- [ ] If retaining Git as a test adapter, restrict it to controlled, preauthorized immutable-object fixtures first; do not promote ordinary status/diff/log to strict based on command names.
+- [ ] If retaining Git as a test adapter, restrict it to controlled, preauthorized immutable-object fixtures first; do not enable ordinary status/diff/log based on command names.
 - [ ] Add rejection reasons for unavailable effective backend/config, mutable dependencies, unknown authorization, and unsupported timeout semantics.
 
 **Done when:** one end-to-end path has a written equivalence argument, passes differential/integration tests, and yields reproducible positive net savings. If no candidate clears this gate, ship diagnostics rather than an unsafe accelerator.
@@ -227,7 +225,7 @@ For mutable reads, prefer accelerating downstream processing of bytes acquired b
 | Priority | Opportunity | Why / likely scope | Correctness boundary |
 |---|---|---|---|
 | 1 | Latency and cache diagnostics | Extension can identify time in provider response, decoding, hooks, tools, and local event handling; some spans need upstream instrumentation. | Passive measurement; sanitized telemetry and very low overhead. |
-| 2 | Remove accelerator overhead | Incremental parsing, cheap imports, asynchronous bounded telemetry, no preflight waits. Directly actionable here. | Preserve behavior; measure extension-disabled versus observe. |
+| 2 | Remove accelerator overhead | Incremental parsing, cheap imports, asynchronous bounded telemetry, no preflight waits. Directly actionable here. | Preserve behavior; measure `off` versus `on`. |
 | 3 | Pure preparation and immutable computation reuse | Earlier parsing/allocation or cached deterministic transforms over authoritative bytes. Extension adapters or upstream tool internals. | Exact implementation/input identity; authorization still runs per invocation. |
 | 4 | In-flight deduplication for explicitly pure tools | Multiple identical immutable computations share work without needing speculative guesses. | Never deduplicate nondeterministic calls, permission checks, effects, or mutable reads just by arguments. Reference-count cancellation. |
 | 5 | Earlier preparation of completed sibling calls | More general than Bash `&&`; overlap with later assistant output. | Must respect permission/backend/state constraints. Default parallel execution already overlaps siblings after preflight. |
@@ -261,7 +259,7 @@ The maximum end-to-end impact also depends on the fraction `f` of baseline laten
 3. Offline recorded event replays across observed providers and chunking patterns, with no additional model requests.
 4. Optional separately budgeted live paired trials: replay validates harness semantics, but cannot alone establish real-world total task latency or model behavior.
 
-Compare extension disabled, observe, and strict; keep experimental results separate. Randomize paired run order and isolate mutable fixtures to limit warm-cache/order bias. Report sample counts, median/p95, variability, absolute milliseconds, coverage, hit rate, waste, memory/CPU, and extra model requests/tokens—not only best-case speedup.
+Compare `off` and `on`; keep unsupported and rejected opportunities separate. Randomize paired run order and isolate mutable fixtures to limit warm-cache/order bias. Report sample counts, median/p95, variability, absolute milliseconds, coverage, hit rate, waste, memory/CPU, and extra model requests/tokens—not only best-case speedup.
 
 ### Test matrix additions
 
