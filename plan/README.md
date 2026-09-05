@@ -6,7 +6,7 @@ Evolve Ramanujan into a **zero-extra-model-call, semantics-preserving accelerati
 
 Build in this order:
 
-1. Define the correctness contract and disable unsafe speculation by default.
+1. Define the correctness contract and keep unsupported speculation disabled while `on` remains the default mode.
 2. Measure actual overlap opportunities and build differential replay tests.
 3. Replace command rewriting/output stitching with an opt-in tool-adapter architecture.
 4. Ship one narrowly proven optimization; expand only when measurements justify it.
@@ -57,8 +57,8 @@ An arbitrary command against a mutable filesystem cannot meet an unconditional e
 
 | Mode | Behavior | Intended status |
 |---|---|---|
-| `off` | No acceleration | Initial default and escape hatch |
-| `on` | Run only adapters with a documented equivalence argument and compatible authorization/backend | Opt-in release mode |
+| `off` | No acceleration | Escape hatch |
+| `on` | Run only adapters with a documented equivalence argument and compatible authorization/backend | Default release mode |
 
 Diagnostics and measurement must not execute speculative work; comparison runs belong in disposable test fixtures, not arbitrary user repositories.
 
@@ -164,7 +164,7 @@ For mutable reads, prefer accelerating downstream processing of bytes acquired b
 
 ### PR 1 — Contain the prototype and correct its claims (small)
 
-- [ ] Add `on` / `off` modes; make `off` the default until the on-mode eligibility contract exists.
+- [ ] Add `on` / `off` modes; make `on` the default and keep unsupported operations disabled until the on-mode eligibility contract exists.
 - [ ] Add the concrete P0 eligibility regressions before changing the classifier.
 - [ ] Separate stats lifecycle from execution lifecycle.
 - [ ] Fix README allowlist/storage descriptions and link this roadmap.
