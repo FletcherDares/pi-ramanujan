@@ -3,6 +3,7 @@ import type { BashExecResult } from "./exec.js";
 import { isPreExecutable } from "./allowlist.js";
 import { extractPartialCommand } from "./extract.js";
 import { prefixBeforeTrailingAnd, splitTopLevelAndChain } from "./split.js";
+import type { RamanujanMode } from "./mode.js";
 
 type Launch = (prefix: string, signal: AbortSignal) => Promise<BashExecResult>;
 type PersistStateChange = (change: RamanujanStateChange) => void;
@@ -45,6 +46,7 @@ export function isRamanujanStateChange(value: unknown): value is RamanujanStateC
 
 export class RamanujanState {
 	private calls = new Map<string, Call>();
+	private mode: RamanujanMode = "on";
 	private stats: SpeculationStats = { speculations: 0, speculativeMs: 0 };
 	private persist?: PersistStateChange;
 
@@ -52,6 +54,14 @@ export class RamanujanState {
 
 	setPersistence(listener: PersistStateChange | undefined): void {
 		this.persist = listener;
+	}
+
+	setMode(mode: RamanujanMode): void {
+		this.mode = mode;
+	}
+
+	isEnabled(): boolean {
+		return this.mode === "on";
 	}
 
 	restore(changes: readonly RamanujanStateChange[]): void {
@@ -73,6 +83,8 @@ export class RamanujanState {
 		parsedCommand?: string,
 		parentSignal?: AbortSignal,
 	): void {
+		if (this.mode === "off") return;
+
 		const command =
 			extractPartialCommand(partialJson) ??
 			(typeof parsedCommand === "string" ? parsedCommand : null);
@@ -144,6 +156,8 @@ export class RamanujanState {
 	}
 
 	async prepare(toolCallId: string, command: string): Promise<string | null> {
+		if (this.mode === "off") return null;
+
 		const call = this.calls.get(toolCallId);
 		if (!call) return null;
 
@@ -177,6 +191,8 @@ export class RamanujanState {
 		suffixContent: ReadonlyArray<{ type: string; text?: string }>,
 		suffixIsError: boolean,
 	): { content: Array<{ type: "text"; text: string }>; isError: boolean } | null {
+		if (this.mode === "off") return null;
+
 		const call = this.calls.get(toolCallId);
 		if (!call?.prefixOutput) return null;
 

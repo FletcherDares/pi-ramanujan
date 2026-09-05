@@ -4,7 +4,7 @@
 
 Speculative `&&` for [Pi](https://pi.dev/). When bash streams `git status && git branch`, runs `git status` early, then only `git branch`, stitches output.
 
-The accelerator is enabled by default and only starts recognized Git prefixes. Unsupported shell syntax and known mutating or externally executing options are rejected; this is still not a guarantee of read-only execution.
+The accelerator is enabled by default and only starts recognized Git prefixes. Set `ramanujan.mode` to `"off"` in `~/.pi/agent/settings.json` or `.pi/settings.json` to pass Bash through unchanged. Unsupported shell syntax and known mutating or externally executing options are rejected; this is still not a guarantee of read-only execution.
 
 ```bash
 pi install ./
