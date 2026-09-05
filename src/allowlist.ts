@@ -18,6 +18,10 @@ const MUTATING_OR_EXTERNAL_OPTIONS = [
 ];
 
 export function isPreExecutable(command: string): boolean {
+	// Validate the command that will actually be executed. Normalizing first can
+	// turn a newline (or another shell boundary) into an apparently harmless
+	// space and make us classify a different program than the one we received.
+	if (/[;&|<>$`'"\\\n\r#]/.test(command)) return false;
 	const normalized = command.trim().replace(/\s+/g, " ");
 	return isReadOnlyGitCommand(normalized);
 }
@@ -49,15 +53,21 @@ function isReadOnlyGitCommand(command: string): boolean {
 	}
 
 	// Remote inspection has a small, explicit read-only subcommand grammar.
-	return args.length === 0 || ["-v", "--verbose", "show", "get-url"].includes(args[0]);
+	return args.length === 0 || ["-v", "--verbose", "get-url"].includes(args[0]);
 }
 
 function isMutatingOrExternalOption(arg: string): boolean {
+	const normalized = arg.toLowerCase();
 	return (
 		arg === "-o" ||
 		MUTATING_OR_EXTERNAL_OPTIONS.some(
-			(option) => arg === option || arg.startsWith(`${option}=`),
+			(option) => normalized === option || normalized.startsWith(`${option}=`) ||
+			(normalized.length > 2 && option.startsWith("--") && option.startsWith(normalized.split("=", 1)[0])),
 		) ||
-		["--delete", "-d", "-D", "--move", "-m", "-M", "--copy", "-c", "-C", "--force", "-f"].includes(arg)
+		[
+			"--delete", "-d", "-D", "--move", "-m", "-M", "--copy", "-c", "-C",
+			"--force", "-f", "--set-upstream", "--set-upstream-to", "--unset-upstream",
+		].includes(normalized) ||
+		(normalized.startsWith("--set-upstream=") || normalized.startsWith("--set-upstream-to="))
 	);
 }

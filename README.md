@@ -1,10 +1,10 @@
 # pi-ramanujan
 
-> Experimental MVP; not yet correctness-preserving. See the [review and acceleration roadmap](plan/README.md) for known issues, safety requirements, and implementation milestones.
+> Always-on acceleration for Pi. It is not yet correctness-preserving; see the [review and acceleration roadmap](plan/README.md) for known issues, safety requirements, and implementation milestones.
 
 Speculative `&&` for [Pi](https://pi.dev/). When bash streams `git status && git branch`, runs `git status` early, then only `git branch`, stitches output.
 
-Eligibility currently uses Git subcommand checks and an option denylist (`src/allowlist.ts`). It accepts arbitrary arguments in several cases and has known safety gaps; it is not a guarantee of read-only execution.
+The accelerator is enabled by default and only starts recognized Git prefixes. Unsupported shell syntax and known mutating or externally executing options are rejected; this is still not a guarantee of read-only execution.
 
 ```bash
 pi install ./

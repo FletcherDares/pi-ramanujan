@@ -56,7 +56,7 @@ export class RamanujanState {
 	}
 
 	restore(changes: readonly RamanujanStateChange[]): void {
-		this.disposeCalls(true);
+		// Reloading persisted counters must not affect active execution.
 		this.stats = { speculations: 0, speculativeMs: 0 };
 		for (const change of changes) {
 			if (change.kind === "clear") {
@@ -222,7 +222,8 @@ export class RamanujanState {
 	}
 
 	clearStats(): void {
-		this.disposeCalls(true);
+		// Statistics are independent from active execution. Clearing the display
+		// must not cancel or discard work that is already in flight.
 		this.stats = { speculations: 0, speculativeMs: 0 };
 		this.emitClear();
 	}

@@ -43,6 +43,12 @@ describe("isPreExecutable", () => {
 
 	it("rejects mutating commands and unsafe arguments", () => {
 		for (const command of [
+			"git status\ntouch marker",
+			"git status && git branch",
+			"git diff \"--output=marker\"",
+			"git diff --out=marker",
+			"git branch --set-upstream-to=origin/main",
+			"git remote show origin",
 			"git add .",
 			"git commit -m message",
 			"git branch -d old-branch",
@@ -59,7 +65,6 @@ describe("isPreExecutable", () => {
 			"git tag release-1",
 			"git remote add origin https://example.com/repo.git",
 			"git fetch",
-			"git status && git branch",
 		]) {
 			expect(isPreExecutable(command)).toBe(false);
 		}
