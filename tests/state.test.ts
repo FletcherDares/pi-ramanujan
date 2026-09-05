@@ -111,6 +111,26 @@ describe("RamanujanState", () => {
 		expect(restored.getStats()).toEqual(state.getStats());
 	});
 
+	it("clearing stats does not cancel active execution", async () => {
+		let resolve!: (result: BashExecResult) => void;
+		const pending = new Promise<BashExecResult>((r) => (resolve = r));
+		const state = new RamanujanState();
+		state.onDelta("id-1", '{"command":"git status &&"}', async () => pending);
+		state.clearStats();
+		resolve({ output: "prefix-out", exitCode: 0, cancelled: false });
+		expect(await state.prepare("id-1", "git status && git branch")).toBe("git branch");
+	});
+
+	it("restoring stats does not cancel active execution", async () => {
+		let resolve!: (result: BashExecResult) => void;
+		const pending = new Promise<BashExecResult>((r) => (resolve = r));
+		const state = new RamanujanState();
+		state.onDelta("id-1", '{"command":"git status &&"}', async () => pending);
+		state.restore([]);
+		resolve({ output: "prefix-out", exitCode: 0, cancelled: false });
+		expect(await state.prepare("id-1", "git status && git branch")).toBe("git branch");
+	});
+
 	it("persists clearing stats", () => {
 		const changes: RamanujanStateChange[] = [];
 		const state = new RamanujanState();

@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { isRamanujanStateChange, type RamanujanStateChange } from "./state.js";
 
 /**
- * Project-scoped stats storage. The file intentionally is not a .jsonl file:
+ * User-scoped stats storage. The file intentionally is not a .jsonl file:
  * Pi uses that extension when discovering session files.
  */
 export class RamanujanStatsStore {
