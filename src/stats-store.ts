@@ -2,10 +2,6 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { isRamanujanStateChange, type RamanujanStateChange } from "./state.js";
 
-/**
- * User-scoped stats storage. The file intentionally is not a .jsonl file:
- * Pi uses that extension when discovering session files.
- */
 export class RamanujanStatsStore {
 	constructor(private readonly filePath: string) {}
 
@@ -24,7 +20,6 @@ export class RamanujanStatsStore {
 				const value: unknown = JSON.parse(line);
 				if (isRamanujanStateChange(value)) changes.push(value);
 			} catch {
-				// Ignore a malformed line so one interrupted write does not lose all stats.
 			}
 		}
 		return changes;
