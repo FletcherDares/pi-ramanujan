@@ -24,7 +24,6 @@ export interface SpeculationStats {
 	speculativeMs: number;
 }
 
-/** A compact, project-persisted stats update. It is not sent to the model. */
 export interface RamanujanStateChange {
 	version: 1;
 	kind: "update" | "clear";
@@ -56,7 +55,6 @@ export class RamanujanState {
 	}
 
 	restore(changes: readonly RamanujanStateChange[]): void {
-		// Reloading persisted counters must not affect active execution.
 		this.stats = { speculations: 0, speculativeMs: 0 };
 		for (const change of changes) {
 			if (change.kind === "clear") {
@@ -222,8 +220,6 @@ export class RamanujanState {
 	}
 
 	clearStats(): void {
-		// Statistics are independent from active execution. Clearing the display
-		// must not cancel or discard work that is already in flight.
 		this.stats = { speculations: 0, speculativeMs: 0 };
 		this.emitClear();
 	}

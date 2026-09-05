@@ -16,15 +16,12 @@ function toolBlock(message: { role: string; content?: unknown }, i: number) {
 
 export default function (pi: ExtensionAPI) {
 	const state = new RamanujanState();
-	// Keep telemetry outside conversation and project files so it is shared by
-	// every Pi session and project for this user.
 	const statsStore = new RamanujanStatsStore(join(homedir(), ".pi", "ramanujan-stats.data"));
 
 	state.setPersistence((change) => {
 		try {
 			statsStore?.append(change);
 		} catch (error) {
-			// Persistence must never break the actual bash tool call.
 			console.error("Failed to persist Ramanujan stats:", error);
 		}
 	});
@@ -71,7 +68,6 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Cleared.", "info");
 				return;
 			}
-			// Refresh so changes made by other running Pi sessions are visible.
 			state.restore(statsStore.load());
 			ctx.ui.notify(formatStats(state.getStats()), "info");
 		},

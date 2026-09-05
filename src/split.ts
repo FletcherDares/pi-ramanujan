@@ -1,4 +1,3 @@
-/** Split a command at top-level `&&` operators, preserving quoted operators. */
 export function splitTopLevelAndChain(command: string): string[] | null {
 	if (!isSafelyParseable(command)) return null;
 
@@ -41,10 +40,6 @@ export function splitTopLevelAndChain(command: string): string[] | null {
 	return parts;
 }
 
-/**
- * If `command` ends with a top-level `&&`, return the left-hand side.
- * Returns null when there is no complete prefix, or when parsing is unsafe.
- */
 export function prefixBeforeTrailingAnd(command: string): string | null {
 	if (!isSafelyParseable(command)) {
 		return null;
